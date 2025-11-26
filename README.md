@@ -1,12 +1,12 @@
 # Ops Bench
 
-A high-performance Python benchmark for validating the "Side Table" strategy for prefix lookups in MySQL.
+A Python benchmark for validating the "Side Table" strategy for prefix lookups in MySQL.
 
-This project demonstrates how to handle massive volumes of hierarchical data (e.g., `labs.result_webhooks.quest`) while maintaining sub-millisecond query latency for "Latest N items by prefix" lookups.
+This project demonstrates how to handle large volumes of hierarchical data (e.g., `labs.result_webhooks.quest`) while maintaining sub-millisecond query latency for "Latest N items by prefix" lookups.
 
 ## Architecture
 
-- **MySQL 8.0**:
+- **MySQL 8.0+**:
     - `operations`: Main log of events (append-only).
     - `operation_prefixes`: Denormalized side table (one row per ancestor prefix).
     - **Optimization**: Custom Stored Procedure (`insert_operation_with_prefixes`) for atomic, low-latency insertion of both records.
