@@ -6,8 +6,38 @@ def cmd_debug_view():
     cursor = conn.cursor(dictionary=True)
     
     try:
-        # Get top 5 most recent operations
-        print("\n=== Top 5 Recent Operations ===\n")
+        # Table Statistics
+        print("\n=== Table Statistics ===\n")
+        
+        # Get sizes from information_schema
+        cursor.execute("""
+            SELECT 
+                table_name AS `Table`, 
+                round(((data_length + index_length) / 1024 / 1024), 2) `Size in MB`,
+                table_rows AS `Row Count`
+            FROM information_schema.TABLES 
+            WHERE table_schema = 'ops_bench'
+            AND table_name IN ('operations', 'operation_prefixes');
+        """)
+        stats = cursor.fetchall()
+        
+        # Print formatted table
+        print(f"{'Table':<25} | {'Rows (Approx)':<15} | {'Size (MB)':<10}")
+        print("-" * 56)
+        for row in stats:
+            print(f"{row['Table']:<25} | {row['Row Count']:<15} | {row['Size in MB']:<10}")
+        
+        # Calculate Amplification Factor
+        ops_count = next((r['Row Count'] for r in stats if r['Table'] == 'operations'), 0)
+        pref_count = next((r['Row Count'] for r in stats if r['Table'] == 'operation_prefixes'), 0)
+        
+        if ops_count > 0:
+            amp = pref_count / ops_count
+            print("-" * 56)
+            print(f"Amplification Factor: {amp:.2f}x (Prefix Rows / Operation Rows)")
+
+        # Recent Operations
+        print("\n\n=== Top 5 Recent Operations ===\n")
         cursor.execute("""
             SELECT id, type_path, created_at, status, payload_json 
             FROM operations 
@@ -44,4 +74,3 @@ def cmd_debug_view():
 
 if __name__ == "__main__":
     cmd_debug_view()
-

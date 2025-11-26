@@ -8,28 +8,60 @@ from src.loader import Loader
 from src.benchmark import Workload
 from src.db import get_connection
 
+def seed_worker(loader, batch_size, batches_per_worker, worker_id, progress_list):
+    inserted = 0
+    for _ in range(batches_per_worker):
+        try:
+            rows, _ = loader.insert_batch(batch_size)
+            inserted += rows
+            # Update shared progress (simple list append is thread-safe enough for progress bar)
+            progress_list.append(rows)
+        except Exception as e:
+            print(f"Worker {worker_id} error: {e}")
+            break
+
 def cmd_seed(args):
-    print(f"Seeding {args.amount} operations...")
+    print(f"Seeding {args.amount} operations with {args.concurrency} threads...")
     loader = Loader()
-    total_inserted = 0
     start_time = time.time()
     
-    # We can multi-thread seed too if needed, but single thread is safer for simple logic
-    # unless we want high speed.
-    # For 10M ops, single thread batch 1000 might take a while.
-    # 10M / 1000 = 10,000 batches.
-    # If 100ms per batch -> 1000s = 16 mins. Acceptable.
-    
     batch_size = args.batch_size
-    batches = args.amount // batch_size
+    total_batches = args.amount // batch_size
+    batches_per_worker = total_batches // args.concurrency
     
-    for i in range(batches):
-        rows, prefs = loader.insert_batch(batch_size)
-        total_inserted += rows
-        if i % 10 == 0:
-            print(f"Inserted {total_inserted} ops...", end='\r')
+    threads = []
+    progress_list = [] # Shared list to track progress
+    
+    import datetime
+
+    # Start threads
+    for i in range(args.concurrency):
+        # Distribute remaining batches to last worker
+        if i == args.concurrency - 1:
+            batches_per_worker += total_batches % args.concurrency
             
-    print(f"\nSeeding complete. {total_inserted} ops in {time.time() - start_time:.2f}s")
+        t = threading.Thread(target=seed_worker, args=(loader, batch_size, batches_per_worker, i, progress_list))
+        threads.append(t)
+        t.start()
+
+    # Monitor progress
+    total_inserted = 0
+    while any(t.is_alive() for t in threads):
+        current_total = sum(progress_list)
+        if current_total > total_inserted: # Only print if changed
+            total_inserted = current_total
+            elapsed = time.time() - start_time
+            rate = total_inserted / elapsed if elapsed > 0 else 0
+            remaining_sec = (args.amount - total_inserted) / rate if rate > 0 else 0
+            eta = str(datetime.timedelta(seconds=int(remaining_sec)))
+            print(f"Inserted {total_inserted}/{args.amount} ops ({rate:.0f} ops/s) - ETA: {eta}", end='\r')
+        time.sleep(0.5)
+            
+    for t in threads:
+        t.join()
+        
+    total_inserted = sum(progress_list)
+    print(f"\nSeeding complete. {total_inserted} ops in {str(datetime.timedelta(seconds=int(time.time() - start_time)))}")
 
 def cmd_validate(args):
     print("Running validations...")
@@ -164,6 +196,7 @@ if __name__ == "__main__":
     p_seed = subparsers.add_parser('seed')
     p_seed.add_argument('--amount', type=int, default=Config.TOTAL_OPS, help='Number of operations to insert')
     p_seed.add_argument('--batch-size', type=int, default=Config.BATCH_SIZE)
+    p_seed.add_argument('--concurrency', type=int, default=1, help='Number of seeding threads')
     
     # Validate command
     p_val = subparsers.add_parser('validate')

@@ -1,6 +1,6 @@
 .PHONY: install up down seed validate run-a run-b run-c run-d debug-view init-sp clean
 
-VENV = venv
+VENV = .venv
 PYTHON = $(VENV)/bin/python
 PIP = $(VENV)/bin/pip
 
@@ -19,11 +19,17 @@ up:
 down:
 	docker-compose down
 
-seed: install
-	$(PYTHON) main.py seed --amount 100000 --batch-size 1000
+# 1M operations records
+seed-fast: install
+	$(PYTHON) main.py seed --amount 1000000 --batch-size 1000
 
-seed-full: install
+# 10M operations records
+seed: install
 	$(PYTHON) main.py seed --amount 10000000 --batch-size 2000
+
+# 100M operations records - Takes about 2 hours to seed
+seed-full: install
+	$(PYTHON) main.py seed --amount 100000000 --batch-size 5000 --concurrency 8
 
 validate: install
 	$(PYTHON) main.py validate
@@ -44,8 +50,11 @@ run-c: install
 run-d: install
 	$(PYTHON) main.py run --mix D --time 60 --concurrency 8
 
-debug-view: install
+debug-records: install
 	$(PYTHON) debug_view.py
+
+debug-sql: install
+	$(PYTHON) check_levels.py
 
 clean:
 	rm -rf __pycache__ src/__pycache__
